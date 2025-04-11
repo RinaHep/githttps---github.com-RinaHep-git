@@ -7,15 +7,17 @@
 <body>
     <h1>Выбор преподавателя и группы</h1>
     <form method="post">
-        <label>Преподаватель:</label>
+        <label for="teacher">Преподаватель:</label>
         <select name="teacher_id">
+            <option value="">Все преподаватели</option>  <!-- Опция для всех преподавателей -->
             {% for id, name in teachers %}
                 <option value="{{ id }}">{{ name }}</option>
             {% endfor %}
         </select>
 
-        <label>Группа:</label>
+        <label for="group">Группа:</label>
         <select name="group_id">
+            <option value="">Все группы</option>  <!-- Опция для всех групп -->
             {% for id, name in groups %}
                 <option value="{{ id }}">{{ name }}</option>
             {% endfor %}
