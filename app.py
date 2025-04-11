@@ -18,70 +18,64 @@ def index():
     cur = conn.cursor()
 
     # Получаем список преподавателей и групп
-    cur.execute('SELECT teacher_id, full_name FROM teachers')
+    cur.execute('SELECT teacher_id, full_name FROM teachers ORDER BY full_name')
     teachers = cur.fetchall()
 
-    cur.execute('SELECT group_id, group_name FROM groups')
+    cur.execute('SELECT group_id, group_name FROM groups ORDER BY group_name')
     groups = cur.fetchall()
 
     results = None
-    query_conditions = []
-    query_params = []
+    selected_teacher = ''
+    selected_group = ''
 
-    # Строим SQL запрос в зависимости от выбранных фильтров
     if request.method == 'POST':
-        teacher_id = request.form.get('teacher_id')
-        group_id = request.form.get('group_id')
+        selected_teacher = request.form.get('teacher_id', '')
+        selected_group = request.form.get('group_id', '')
 
-        if teacher_id:  # Если выбран преподаватель
-            query_conditions.append('fg.teacher_id = %s')
-            query_params.append(teacher_id)
-
-        if group_id:  # Если выбрана группа
-            query_conditions.append('g.group_id = %s')
-            query_params.append(group_id)
-
-        # Собираем основной запрос с условиями
         query = """
-        SELECT
-            t.full_name,
-            g.group_name,
-            SUM(CASE 
-                    WHEN (CASE WHEN fg.grade ~ '^\d+$' THEN fg.grade::INTEGER ELSE NULL END) BETWEEN 1 AND 59 THEN 1
-                    ELSE 0 
-                END) AS неудовл,
-            SUM(CASE 
-                    WHEN (CASE WHEN fg.grade ~ '^\d+$' THEN fg.grade::INTEGER ELSE NULL END) BETWEEN 60 AND 74 THEN 1 
-                    ELSE 0 
-                END) AS удовл,
-            SUM(CASE 
-                    WHEN (CASE WHEN fg.grade ~ '^\d+$' THEN fg.grade::INTEGER ELSE NULL END) BETWEEN 75 AND 84 THEN 1 
-                    ELSE 0 
-                END) AS хор,
-            SUM(CASE 
-                    WHEN (CASE WHEN fg.grade ~ '^\d+$' THEN fg.grade::INTEGER ELSE NULL END) BETWEEN 85 AND 100 THEN 1 
-                    ELSE 0 
-                END) AS отл
-        FROM final_grades fg
-        JOIN students s ON fg.student_id = s.student_id
-        JOIN groups g ON s.group_id = g.group_id
-        JOIN teachers t ON fg.teacher_id = t.teacher_id
-    """
+            SELECT
+                t.full_name AS teacher_name,
+                g.group_name,
+                ss.score AS grade,
+                COUNT(*) AS grade_count
+            FROM student_scores ss
+            JOIN students s ON ss.student_id = s.student_id
+            JOIN groups g ON s.group_id = g.group_id
+            JOIN teachers t ON ss.teacher_id = t.teacher_id
+            JOIN point_activities pa ON ss.activity_id = pa.activity_id
+            JOIN activity_types at ON pa.activity_type = at.activity_id
+            WHERE 1=1
+        """
 
-        # Добавляем условия фильтрации, если они есть
-        if query_conditions:
-            query += ' WHERE ' + ' AND '.join(query_conditions)
+        params = []
 
-        query += ' GROUP BY t.full_name, g.group_name ORDER BY g.group_name'
+        if selected_teacher:
+            query += " AND t.teacher_id = %s"
+            params.append(selected_teacher)
 
-        # Выполняем запрос с динамическими параметрами
-        cur.execute(query, tuple(query_params))
+        if selected_group:
+            query += " AND g.group_id = %s"
+            params.append(selected_group)
+
+        query += """
+            GROUP BY t.full_name, g.group_name, ss.score, at.activity_name
+            ORDER BY t.full_name, g.group_name, at.activity_name, ss.score
+        """
+
+        cur.execute(query, tuple(params))
         results = cur.fetchall()
 
     cur.close()
     conn.close()
 
-    return render_template('index.html', teachers=teachers, groups=groups, results=results)
+    return render_template(
+        'index.html', 
+        teachers=teachers, 
+        groups=groups, 
+        results=results,
+        selected_teacher=selected_teacher,
+        selected_group=selected_group
+    )
 
 if __name__ == '__main__':
     app.run(debug=True)

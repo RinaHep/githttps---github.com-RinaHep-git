@@ -3,23 +3,37 @@
 <head>
     <meta charset="UTF-8">
     <title>Отчёт по оценкам</title>
+    <style>
+        table {
+            border-collapse: collapse;
+            width: 100%;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+    </style>
 </head>
 <body>
     <h1>Выбор преподавателя и группы</h1>
     <form method="post">
         <label for="teacher">Преподаватель:</label>
-        <select name="teacher_id">
-            <option value="">Все преподаватели</option>  <!-- Опция для всех преподавателей -->
+        <select name="teacher_id" id="teacher">
+            <option value="">Все преподаватели</option>
             {% for id, name in teachers %}
-                <option value="{{ id }}">{{ name }}</option>
+                <option value="{{ id }}" {% if selected_teacher == id|string %}selected{% endif %}>{{ name }}</option>
             {% endfor %}
         </select>
 
         <label for="group">Группа:</label>
-        <select name="group_id">
-            <option value="">Все группы</option>  <!-- Опция для всех групп -->
+        <select name="group_id" id="group">
+            <option value="">Все группы</option>
             {% for id, name in groups %}
-                <option value="{{ id }}">{{ name }}</option>
+                <option value="{{ id }}" {% if selected_group == id|string %}selected{% endif %}>{{ name }}</option>
             {% endfor %}
         </select>
 
@@ -28,14 +42,13 @@
 
     {% if results %}
         <h2>Результаты</h2>
-        <table border="1">
+        <table>
             <tr>
                 <th>Преподаватель</th>
                 <th>Группа</th>
-                <th>Неудовл</th>
-                <th>Удовл</th>
-                <th>Хор</th>
-                <th>Отл</th>
+                <th>Тип занятия</th>
+                <th>Оценка</th>
+                <th>Количество</th>
             </tr>
             {% for row in results %}
             <tr>
@@ -44,7 +57,6 @@
                 <td>{{ row[2] }}</td>
                 <td>{{ row[3] }}</td>
                 <td>{{ row[4] }}</td>
-                <td>{{ row[5] }}</td>
             </tr>
             {% endfor %}
         </table>
