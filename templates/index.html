@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Отчёт по оценкам</title>
+</head>
+<body>
+    <h1>Выбор преподавателя и группы</h1>
+    <form method="post">
+        <label>Преподаватель:</label>
+        <select name="teacher_id">
+            {% for id, name in teachers %}
+                <option value="{{ id }}">{{ name }}</option>
+            {% endfor %}
+        </select>
+
+        <label>Группа:</label>
+        <select name="group_id">
+            {% for id, name in groups %}
+                <option value="{{ id }}">{{ name }}</option>
+            {% endfor %}
+        </select>
+
+        <button type="submit">Показать оценки</button>
+    </form>
+
+    {% if results %}
+        <h2>Результаты</h2>
+        <table border="1">
+            <tr>
+                <th>Преподаватель</th>
+                <th>Группа</th>
+                <th>Оценка</th>
+                <th>Количество</th>
+            </tr>
+            {% for row in results %}
+            <tr>
+                <td>{{ row[0] }}</td>
+                <td>{{ row[1] }}</td>
+                <td>{{ row[2] }}</td>
+                <td>{{ row[3] }}</td>
+            </tr>
+            {% endfor %}
+        </table>
+    {% endif %}
+</body>
+</html>
