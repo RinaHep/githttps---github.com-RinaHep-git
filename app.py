@@ -43,22 +43,36 @@ def index():
 
         # Собираем основной запрос с условиями
         query = """
-            SELECT
-                t.full_name,
-                g.group_name,
-                fg.grade,
-                COUNT(*) AS grade_count
-            FROM final_grades fg
-            JOIN students s ON fg.student_id = s.student_id
-            JOIN groups g ON s.group_id = g.group_id
-            JOIN teachers t ON fg.teacher_id = t.teacher_id
-        """
+        SELECT
+            t.full_name,
+            g.group_name,
+            SUM(CASE 
+                    WHEN (CASE WHEN fg.grade ~ '^\d+$' THEN fg.grade::INTEGER ELSE NULL END) BETWEEN 1 AND 59 THEN 1
+                    ELSE 0 
+                END) AS неудовл,
+            SUM(CASE 
+                    WHEN (CASE WHEN fg.grade ~ '^\d+$' THEN fg.grade::INTEGER ELSE NULL END) BETWEEN 60 AND 74 THEN 1 
+                    ELSE 0 
+                END) AS удовл,
+            SUM(CASE 
+                    WHEN (CASE WHEN fg.grade ~ '^\d+$' THEN fg.grade::INTEGER ELSE NULL END) BETWEEN 75 AND 84 THEN 1 
+                    ELSE 0 
+                END) AS хор,
+            SUM(CASE 
+                    WHEN (CASE WHEN fg.grade ~ '^\d+$' THEN fg.grade::INTEGER ELSE NULL END) BETWEEN 85 AND 100 THEN 1 
+                    ELSE 0 
+                END) AS отл
+        FROM final_grades fg
+        JOIN students s ON fg.student_id = s.student_id
+        JOIN groups g ON s.group_id = g.group_id
+        JOIN teachers t ON fg.teacher_id = t.teacher_id
+    """
 
         # Добавляем условия фильтрации, если они есть
         if query_conditions:
             query += ' WHERE ' + ' AND '.join(query_conditions)
 
-        query += ' GROUP BY t.full_name, g.group_name, fg.grade ORDER BY fg.grade'
+        query += ' GROUP BY t.full_name, g.group_name ORDER BY g.group_name'
 
         # Выполняем запрос с динамическими параметрами
         cur.execute(query, tuple(query_params))
