@@ -46,27 +46,57 @@ def index():
             cur.execute('SELECT group_name FROM groups WHERE group_id = %s', (selected_group,))
             group_name = cur.fetchone()[0]
 
-        # Запрос для сводной таблицы оценок
+        # Исправленный запрос для сводной таблицы оценок
         summary_query = """
-            SELECT 
-                fg.grade,
-                COUNT(*) as count
-            FROM final_grades fg
-            JOIN students s ON fg.student_id = s.student_id
-            WHERE 1=1
+            WITH student_avg_scores AS (
+                SELECT 
+                    s.student_id,
+                    AVG(ss.score) as avg_score
+                FROM student_scores ss
+                JOIN students s ON ss.student_id = s.student_id
+                JOIN teachers t ON ss.teacher_id = t.teacher_id
+                WHERE 1=1
         """
         summary_params = []
+
+        if selected_teacher:
+            summary_query += " AND t.teacher_id = %s"
+            summary_params.append(selected_teacher)
 
         if selected_group:
             summary_query += " AND s.group_id = %s"
             summary_params.append(selected_group)
 
-        summary_query += " GROUP BY fg.grade ORDER BY fg.grade DESC"
+        summary_query += """
+                GROUP BY s.student_id
+            ),
+            grade_categories AS (
+                SELECT 
+                    CASE 
+                        WHEN avg_score >= 85 THEN 'Отл'
+                        WHEN avg_score >= 75 THEN 'Хор'
+                        WHEN avg_score >= 60 THEN 'Удовл'
+                        ELSE 'Неудовл'
+                    END as grade
+                FROM student_avg_scores
+            )
+            SELECT 
+                grade,
+                COUNT(*) as student_count
+            FROM grade_categories
+            GROUP BY grade
+            ORDER BY CASE grade 
+                WHEN 'Отл' THEN 1 
+                WHEN 'Хор' THEN 2 
+                WHEN 'Удовл' THEN 3 
+                ELSE 4 
+            END
+        """
         
         cur.execute(summary_query, tuple(summary_params))
         summary = cur.fetchall()
 
-        # Запрос для детализированной таблицы (только если нажата кнопка)
+        # Запрос для детализированной таблицы
         if show_details:
             details_query = """
                 SELECT
