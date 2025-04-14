@@ -26,6 +26,7 @@ def index():
 
     results = None
     summary = None
+    activity_types = None
     selected_teacher = ''
     selected_group = ''
     show_details = False
@@ -46,7 +47,32 @@ def index():
             cur.execute('SELECT group_name FROM groups WHERE group_id = %s', (selected_group,))
             group_name = cur.fetchone()[0]
 
-        # Запрос для сводной таблицы оценок (без изменений)
+        # Получаем типы занятий для выбранных фильтров
+        activity_types_query = """
+            SELECT DISTINCT at.activity_name 
+            FROM activity_types at
+            JOIN point_activities pa ON at.activity_id = pa.activity_type
+            JOIN student_scores ss ON pa.activity_id = ss.activity_id
+            JOIN students s ON ss.student_id = s.student_id
+            JOIN teachers t ON ss.teacher_id = t.teacher_id
+            WHERE 1=1
+        """
+        activity_params = []
+
+        if selected_teacher:
+            activity_types_query += " AND t.teacher_id = %s"
+            activity_params.append(selected_teacher)
+
+        if selected_group:
+            activity_types_query += " AND s.group_id = %s"
+            activity_params.append(selected_group)
+
+        activity_types_query += " ORDER BY at.activity_name"
+
+        cur.execute(activity_types_query, tuple(activity_params))
+        activity_types = [row[0] for row in cur.fetchall()]
+
+        # Запрос для сводной таблицы оценок
         summary_query = """
             WITH student_avg_scores AS (
                 SELECT 
@@ -96,12 +122,11 @@ def index():
         cur.execute(summary_query, tuple(summary_params))
         summary = cur.fetchall()
 
-        # Запрос для детализированной таблицы (убрали группу)
+        # Запрос для детализированной таблицы (без типа занятий)
         if show_details:
             details_query = """
                 SELECT
                     s.full_name AS student_name,
-                    at.activity_name,
                     ss.score::integer AS grade
                 FROM student_scores ss
                 JOIN students s ON ss.student_id = s.student_id
@@ -121,7 +146,7 @@ def index():
                 details_query += " AND s.group_id = %s"
                 details_params.append(selected_group)
 
-            details_query += " ORDER BY s.full_name, at.activity_name"
+            details_query += " ORDER BY s.full_name"
 
             cur.execute(details_query, tuple(details_params))
             results = cur.fetchall()
@@ -135,6 +160,7 @@ def index():
         groups=groups, 
         results=results,
         summary=summary,
+        activity_types=activity_types,
         selected_teacher=selected_teacher,
         selected_group=selected_group,
         teacher_name=teacher_name,

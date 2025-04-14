@@ -119,12 +119,19 @@
             </form>
         </div>
 
+        <!-- В секции header после вывода преподавателя и группы -->
         {% if teacher_name or group_name %}
         <div class="header">
             <h2>
                 {% if teacher_name %}<span>Преподаватель: <strong>{{ teacher_name }}</strong></span>{% endif %}
                 {% if group_name %}<span style="margin-left: 20px;">Группа: <strong>{{ group_name }}</strong></span>{% endif %}
             </h2>
+            {% if activity_types %}
+            <div style="margin-top: 10px;">
+                <strong>Типы занятий:</strong> 
+                {{ activity_types|join(', ') }}
+            </div>
+            {% endif %}
         </div>
         {% endif %}
 
@@ -161,22 +168,20 @@
         {% endif %}
 
         {% if show_details and results %}
-        <h2>Детализированные оценки</h2>
-        <table>
-            <tr>
-                <th>ФИО студента</th>
-                <th>Тип занятия</th>
-                <th>Оценка</th>
-            </tr>
-            {% for row in results %}
-            <tr>
-                <td>{{ row[0] }}</td>
-                <td>{{ row[1] }}</td>
-                <td>{{ row[2] }}</td>
-            </tr>
-            {% endfor %}
-        </table>
-        {% endif %}
+            <h2>Детализированные оценки</h2>
+            <table>
+                <tr>
+                    <th>ФИО студента</th>
+                    <th>Оценка</th>
+                </tr>
+                {% for row in results %}
+                <tr>
+                    <td>{{ row[0] }}</td>
+                    <td>{{ row[1] }}</td>
+                </tr>
+                {% endfor %}
+            </table>
+            {% endif %}
 
         {% if summary %}
         <div style="margin-top: 30px; padding: 15px; background-color: #f0f7ff; border-radius: 5px;">
