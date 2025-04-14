@@ -46,7 +46,7 @@ def index():
             cur.execute('SELECT group_name FROM groups WHERE group_id = %s', (selected_group,))
             group_name = cur.fetchone()[0]
 
-        # Исправленный запрос для сводной таблицы оценок
+        # Запрос для сводной таблицы оценок (без изменений)
         summary_query = """
             WITH student_avg_scores AS (
                 SELECT 
@@ -96,18 +96,15 @@ def index():
         cur.execute(summary_query, tuple(summary_params))
         summary = cur.fetchall()
 
-        # Запрос для детализированной таблицы
+        # Запрос для детализированной таблицы (убрали группу)
         if show_details:
             details_query = """
                 SELECT
-                    t.full_name AS teacher_name,
-                    g.group_name,
+                    s.full_name AS student_name,
                     at.activity_name,
-                    ss.score AS grade,
-                    COUNT(*) AS grade_count
+                    ss.score::integer AS grade
                 FROM student_scores ss
                 JOIN students s ON ss.student_id = s.student_id
-                JOIN groups g ON s.group_id = g.group_id
                 JOIN teachers t ON ss.teacher_id = t.teacher_id
                 JOIN point_activities pa ON ss.activity_id = pa.activity_id
                 JOIN activity_types at ON pa.activity_type = at.activity_id
@@ -121,13 +118,10 @@ def index():
                 details_params.append(selected_teacher)
 
             if selected_group:
-                details_query += " AND g.group_id = %s"
+                details_query += " AND s.group_id = %s"
                 details_params.append(selected_group)
 
-            details_query += """
-                GROUP BY t.full_name, g.group_name, at.activity_name, ss.score
-                ORDER BY t.full_name, g.group_name, at.activity_name, ss.score
-            """
+            details_query += " ORDER BY s.full_name, at.activity_name"
 
             cur.execute(details_query, tuple(details_params))
             results = cur.fetchall()
