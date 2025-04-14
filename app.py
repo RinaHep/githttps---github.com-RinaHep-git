@@ -72,39 +72,93 @@ def index():
         cur.execute(activity_types_query, tuple(activity_params))
         activity_types = [row[0] for row in cur.fetchall()]
 
-        # Запрос для сводной таблицы оценок
-        summary_query = """
-            WITH student_avg_scores AS (
+        # Общий запрос для расчета итоговых оценок по контрольным точкам
+        final_grades_query = """
+            WITH lecture_scores AS (
                 SELECT 
                     s.student_id,
-                    AVG(ss.score) as avg_score
+                    s.full_name AS student_name,
+                    cp.point_number AS checkpoint_id,
+                    AVG(CASE WHEN at.activity_name = 'Лекция' THEN ss.score ELSE 0 END) * 0.4 AS lecture_score
                 FROM student_scores ss
                 JOIN students s ON ss.student_id = s.student_id
                 JOIN teachers t ON ss.teacher_id = t.teacher_id
-                WHERE 1=1
+                JOIN point_activities pa ON ss.activity_id = pa.activity_id
+                JOIN activity_types at ON pa.activity_type = at.activity_id
+                JOIN control_points cp ON pa.point_id = cp.point_id
+                WHERE at.activity_name = 'Лекция'
         """
-        summary_params = []
+
+        final_params = []
 
         if selected_teacher:
-            summary_query += " AND t.teacher_id = %s"
-            summary_params.append(selected_teacher)
+            final_grades_query += " AND t.teacher_id = %s"
+            final_params.append(selected_teacher)
 
         if selected_group:
-            summary_query += " AND s.group_id = %s"
-            summary_params.append(selected_group)
+            final_grades_query += " AND s.group_id = %s"
+            final_params.append(selected_group)
 
-        summary_query += """
-                GROUP BY s.student_id
-            ),
+        final_grades_query += """
+            GROUP BY s.student_id, s.full_name, cp.point_number
+        ),
+        practice_scores AS (
+            SELECT 
+                s.student_id,
+                s.full_name AS student_name,
+                cp.point_number AS checkpoint_id,
+                AVG(CASE WHEN at.activity_name = 'Практика' THEN ss.score ELSE 0 END) * 0.6 AS practice_score
+            FROM student_scores ss
+            JOIN students s ON ss.student_id = s.student_id
+            JOIN teachers t ON ss.teacher_id = t.teacher_id
+            JOIN point_activities pa ON ss.activity_id = pa.activity_id
+            JOIN activity_types at ON pa.activity_type = at.activity_id
+            JOIN control_points cp ON pa.point_id = cp.point_id
+            WHERE at.activity_name = 'Практика'
+    """
+
+        if selected_teacher:
+            final_grades_query += " AND t.teacher_id = %s"
+            final_params.append(selected_teacher)
+
+        if selected_group:
+            final_grades_query += " AND s.group_id = %s"
+            final_params.append(selected_group)
+
+        final_grades_query += """
+            GROUP BY s.student_id, s.full_name, cp.point_number
+        ),
+        checkpoint_scores AS (
+            SELECT 
+                COALESCE(l.student_id, p.student_id) AS student_id,
+                COALESCE(l.student_name, p.student_name) AS student_name,
+                COALESCE(l.checkpoint_id, p.checkpoint_id) AS checkpoint_id,
+                (COALESCE(l.lecture_score, 0) + COALESCE(p.practice_score, 0)) AS checkpoint_score
+            FROM lecture_scores l
+            FULL OUTER JOIN practice_scores p ON l.student_id = p.student_id AND l.checkpoint_id = p.checkpoint_id
+        ),
+        final_scores AS (
+            SELECT 
+                student_id,
+                student_name,
+                ROUND(AVG(checkpoint_score))::integer AS final_grade
+            FROM checkpoint_scores
+            GROUP BY student_id, student_name
+        )
+        SELECT * FROM final_scores
+    """
+        # Запрос для сводной таблицы оценок (используем те же итоговые оценки)
+        summary_query = f"""
+            WITH final_grades AS ({final_grades_query}),
             grade_categories AS (
                 SELECT 
                     CASE 
-                        WHEN avg_score >= 85 THEN 'Отл'
-                        WHEN avg_score >= 75 THEN 'Хор'
-                        WHEN avg_score >= 60 THEN 'Удовл'
+                        WHEN final_grade >= 85 THEN 'Отл'
+                        WHEN final_grade >= 75 THEN 'Хор'
+                        WHEN final_grade >= 60 THEN 'Удовл'
                         ELSE 'Неудовл'
                     END as grade
-                FROM student_avg_scores
+                FROM final_grades
             )
             SELECT 
                 grade,
@@ -119,91 +173,20 @@ def index():
             END
         """
         
-        cur.execute(summary_query, tuple(summary_params))
+        cur.execute(summary_query, tuple(final_params))
         summary = cur.fetchall()
 
-        # Запрос для детализированной таблицы (с расчетом итоговой оценки)
+        # Запрос для детализированной таблицы (используем те же итоговые оценки)
+        # Запрос для детализированной таблицы (используем те же итоговые оценки)
         if show_details:
-            details_query = """
-                WITH lecture_scores AS (
-                    SELECT 
-                        s.student_id,
-                        s.full_name AS student_name,
-                        cp.point_number AS checkpoint_id,
-                        AVG(CASE WHEN at.activity_name = 'Лекция' THEN ss.score ELSE 0 END) * 0.4 AS lecture_score
-                    FROM student_scores ss
-                    JOIN students s ON ss.student_id = s.student_id
-                    JOIN teachers t ON ss.teacher_id = t.teacher_id
-                    JOIN point_activities pa ON ss.activity_id = pa.activity_id
-                    JOIN activity_types at ON pa.activity_type = at.activity_id
-                    JOIN control_points cp ON pa.point_id = cp.point_id
-                    WHERE at.activity_name = 'Лекция'
-            """
-
-            details_params = []
-
-            if selected_teacher:
-                details_query += " AND t.teacher_id = %s"
-                details_params.append(selected_teacher)
-
-            if selected_group:
-                details_query += " AND s.group_id = %s"
-                details_params.append(selected_group)
-
-            details_query += """
-                    GROUP BY s.student_id, s.full_name, cp.point_number
-                ),
-                practice_scores AS (
-                    SELECT 
-                        s.student_id,
-                        s.full_name AS student_name,
-                        cp.point_number AS checkpoint_id,
-                        AVG(CASE WHEN at.activity_name = 'Практика' THEN ss.score ELSE 0 END) * 0.6 AS practice_score
-                    FROM student_scores ss
-                    JOIN students s ON ss.student_id = s.student_id
-                    JOIN teachers t ON ss.teacher_id = t.teacher_id
-                    JOIN point_activities pa ON ss.activity_id = pa.activity_id
-                    JOIN activity_types at ON pa.activity_type = at.activity_id
-                    JOIN control_points cp ON pa.point_id = cp.point_id
-                    WHERE at.activity_name = 'Практика'
-            """
-
-            if selected_teacher:
-                details_query += " AND t.teacher_id = %s"
-                details_params.append(selected_teacher)
-
-            if selected_group:
-                details_query += " AND s.group_id = %s"
-                details_params.append(selected_group)
-
-            details_query += """
-                    GROUP BY s.student_id, s.full_name, cp.point_number
-                ),
-                checkpoint_scores AS (
-                    SELECT 
-                        COALESCE(l.student_id, p.student_id) AS student_id,
-                        COALESCE(l.student_name, p.student_name) AS student_name,
-                        COALESCE(l.checkpoint_id, p.checkpoint_id) AS checkpoint_id,
-                        (COALESCE(l.lecture_score, 0) + COALESCE(p.practice_score, 0)) AS checkpoint_score
-                    FROM lecture_scores l
-                    FULL OUTER JOIN practice_scores p ON l.student_id = p.student_id AND l.checkpoint_id = p.checkpoint_id
-                ),
-                final_scores AS (
-                    SELECT 
-                        student_id,
-                        student_name,
-                        ROUND(AVG(checkpoint_score))::integer AS final_grade
-                    FROM checkpoint_scores
-                    GROUP BY student_id, student_name
-                )
+            details_query = f"""
                 SELECT 
                     student_name,
                     final_grade
-                FROM final_scores
+                FROM ({final_grades_query}) AS final_data
                 ORDER BY student_name
             """
-
-            cur.execute(details_query, tuple(details_params))
+            cur.execute(details_query, tuple(final_params))
             results = cur.fetchall()
 
     cur.close()

@@ -309,20 +309,20 @@
     {% endif %}
 
     {% if show_details and results %}
-    <h2>Детализированные оценки</h2>
-    <table>
-        <tr>
-            <th>ФИО студента</th>
-            <th>Оценка</th>
-        </tr>
-        {% for row in results %}
-        <tr>
-            <td>{{ row[0] }}</td>
-            <td>{{ row[1] }}</td>
-        </tr>
-        {% endfor %}
-    </table>
-    {% endif %}
+        <h2>Детализированные оценки</h2>
+        <table>
+            <tr>
+                <th>ФИО студента</th>
+                <th>Итоговая оценка</th>
+            </tr>
+            {% for row in results %}
+            <tr>
+                <td>{{ row[0] }}</td>
+                <td>{{ row[1] }}</td>
+            </tr>
+            {% endfor %}
+        </table>
+        {% endif %}
 
     {% if summary %}
     <div class="info-box">
