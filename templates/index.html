@@ -11,7 +11,6 @@
             color: #333;
         }
         
-        /* Общий стиль для всех заголовков */
         h1, h2, h3, h4 {
             color: #2c3e50;
             margin-bottom: 15px;
@@ -244,11 +243,31 @@
                 </select>
             </div>
             
+            <div style="margin-bottom: 15px;">
+                <label for="semester">Семестр:</label>
+                <select name="semester" id="semester">
+                    <option value="">Все семестры</option>
+                    {% for num, name in semesters %}
+                        <option value="{{ num }}" {% if selected_semester == num|string %}selected{% endif %}>{{ name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            
+            <div style="margin-bottom: 15px;">
+                <label for="discipline">Дисциплина:</label>
+                <select name="discipline_id" id="discipline">
+                    <option value="">Все дисциплины</option>
+                    {% for id, name in disciplines %}
+                        <option value="{{ id }}" {% if selected_discipline == id|string %}selected{% endif %}>{{ name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            
             <button type="submit">Применить фильтры</button>
         </form>
     </div>
 
-    {% if teacher_name or group_name or activity_types %}
+    {% if teacher_name or group_name or semester_name or discipline_name or activity_types %}
     <div class="header">
         <h2>Применённые фильтры</h2>
         <div class="filter-info">
@@ -263,6 +282,20 @@
             <div class="filter-item">
                 <span class="filter-label">Группа:</span>
                 <span class="filter-value">{{ group_name }}</span>
+            </div>
+            {% endif %}
+            
+            {% if semester_name %}
+            <div class="filter-item">
+                <span class="filter-label">Семестр:</span>
+                <span class="filter-value">{{ semester_name }}</span>
+            </div>
+            {% endif %}
+            
+            {% if discipline_name %}
+            <div class="filter-item">
+                <span class="filter-label">Дисциплина:</span>
+                <span class="filter-value">{{ discipline_name }}</span>
             </div>
             {% endif %}
             
@@ -302,6 +335,8 @@
     <form method="post">
         <input type="hidden" name="teacher_id" value="{{ selected_teacher }}">
         <input type="hidden" name="group_id" value="{{ selected_group }}">
+        <input type="hidden" name="semester" value="{{ selected_semester }}">
+        <input type="hidden" name="discipline_id" value="{{ selected_discipline }}">
         <button type="submit" name="show_details">
             {% if show_details %}Скрыть детализированные оценки{% else %}Показать детализированные оценки{% endif %}
         </button>
@@ -322,7 +357,7 @@
             </tr>
             {% endfor %}
         </table>
-        {% endif %}
+    {% endif %}
 
     {% if summary %}
     <div class="info-box">
