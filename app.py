@@ -184,7 +184,8 @@ def index():
                     student_name,
                     final_grade
                 FROM ({final_grades_query}) AS final_data
-                ORDER BY student_name
+                ORDER BY 
+                    CAST(SUBSTRING(student_name FROM 'Студент (\d+)') AS INTEGER)
             """
             cur.execute(details_query, tuple(final_params))
             results = cur.fetchall()
