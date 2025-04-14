@@ -122,18 +122,22 @@ def index():
         cur.execute(summary_query, tuple(summary_params))
         summary = cur.fetchall()
 
-        # Запрос для детализированной таблицы (без типа занятий)
+        # Запрос для детализированной таблицы (с расчетом итоговой оценки)
         if show_details:
             details_query = """
-                SELECT
-                    s.full_name AS student_name,
-                    ss.score::integer AS grade
-                FROM student_scores ss
-                JOIN students s ON ss.student_id = s.student_id
-                JOIN teachers t ON ss.teacher_id = t.teacher_id
-                JOIN point_activities pa ON ss.activity_id = pa.activity_id
-                JOIN activity_types at ON pa.activity_type = at.activity_id
-                WHERE 1=1
+                WITH lecture_scores AS (
+                    SELECT 
+                        s.student_id,
+                        s.full_name AS student_name,
+                        cp.point_number AS checkpoint_id,
+                        AVG(CASE WHEN at.activity_name = 'Лекция' THEN ss.score ELSE 0 END) * 0.4 AS lecture_score
+                    FROM student_scores ss
+                    JOIN students s ON ss.student_id = s.student_id
+                    JOIN teachers t ON ss.teacher_id = t.teacher_id
+                    JOIN point_activities pa ON ss.activity_id = pa.activity_id
+                    JOIN activity_types at ON pa.activity_type = at.activity_id
+                    JOIN control_points cp ON pa.point_id = cp.point_id
+                    WHERE at.activity_name = 'Лекция'
             """
 
             details_params = []
@@ -146,7 +150,58 @@ def index():
                 details_query += " AND s.group_id = %s"
                 details_params.append(selected_group)
 
-            details_query += " ORDER BY s.full_name"
+            details_query += """
+                    GROUP BY s.student_id, s.full_name, cp.point_number
+                ),
+                practice_scores AS (
+                    SELECT 
+                        s.student_id,
+                        s.full_name AS student_name,
+                        cp.point_number AS checkpoint_id,
+                        AVG(CASE WHEN at.activity_name = 'Практика' THEN ss.score ELSE 0 END) * 0.6 AS practice_score
+                    FROM student_scores ss
+                    JOIN students s ON ss.student_id = s.student_id
+                    JOIN teachers t ON ss.teacher_id = t.teacher_id
+                    JOIN point_activities pa ON ss.activity_id = pa.activity_id
+                    JOIN activity_types at ON pa.activity_type = at.activity_id
+                    JOIN control_points cp ON pa.point_id = cp.point_id
+                    WHERE at.activity_name = 'Практика'
+            """
+
+            if selected_teacher:
+                details_query += " AND t.teacher_id = %s"
+                details_params.append(selected_teacher)
+
+            if selected_group:
+                details_query += " AND s.group_id = %s"
+                details_params.append(selected_group)
+
+            details_query += """
+                    GROUP BY s.student_id, s.full_name, cp.point_number
+                ),
+                checkpoint_scores AS (
+                    SELECT 
+                        COALESCE(l.student_id, p.student_id) AS student_id,
+                        COALESCE(l.student_name, p.student_name) AS student_name,
+                        COALESCE(l.checkpoint_id, p.checkpoint_id) AS checkpoint_id,
+                        (COALESCE(l.lecture_score, 0) + COALESCE(p.practice_score, 0)) AS checkpoint_score
+                    FROM lecture_scores l
+                    FULL OUTER JOIN practice_scores p ON l.student_id = p.student_id AND l.checkpoint_id = p.checkpoint_id
+                ),
+                final_scores AS (
+                    SELECT 
+                        student_id,
+                        student_name,
+                        ROUND(AVG(checkpoint_score))::integer AS final_grade
+                    FROM checkpoint_scores
+                    GROUP BY student_id, student_name
+                )
+                SELECT 
+                    student_name,
+                    final_grade
+                FROM final_scores
+                ORDER BY student_name
+            """
 
             cur.execute(details_query, tuple(details_params))
             results = cur.fetchall()
