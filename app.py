@@ -100,122 +100,63 @@ def index():
         cur.execute(activity_types_query, tuple(activity_params))
         activity_types = [row[0] for row in cur.fetchall()]
 
-        # Общий запрос для расчета итоговых оценок по контрольным точкам
+        # Упрощенный запрос для расчета итоговых оценок из таблицы final_grades
         final_grades_query = """
-            WITH lecture_scores AS (
-                SELECT 
-                    s.student_id,
-                    s.full_name AS student_name,
-                    cp.point_number AS checkpoint_id,
-                    AVG(CASE WHEN at.activity_name = 'Лекция' THEN ss.score ELSE 0 END) * 0.4 AS lecture_score
-                FROM student_scores ss
-                JOIN students s ON ss.student_id = s.student_id
-                JOIN teachers t ON ss.teacher_id = t.teacher_id
-                JOIN point_activities pa ON ss.activity_id = pa.activity_id
-                JOIN activity_types at ON pa.activity_type = at.activity_id
-                JOIN control_points cp ON pa.point_id = cp.point_id
-                JOIN disciplines d ON cp.discipline_id = d.discipline_id
-                WHERE at.activity_name = 'Лекция'
+            SELECT 
+                s.full_name AS student_name,
+                ROUND(fg.total_score)::integer AS final_grade,
+                fg.grade AS grade_category
+            FROM final_grades fg
+            JOIN students s ON fg.student_id = s.student_id
+            JOIN teachers t ON fg.teacher_id = t.teacher_id
+            JOIN disciplines d ON fg.discipline_id = d.discipline_id
+            WHERE 1=1
         """
-
         final_params = []
 
         if selected_teacher:
-            final_grades_query += " AND t.teacher_id = %s"
-            final_params.append(selected_teacher)
+            final_grades_query += """
+                AND s.student_id IN (
+                    SELECT DISTINCT ss.student_id
+                    FROM student_scores ss
+                    WHERE ss.teacher_id = %s
+                )
+            """
+        final_params.append(selected_teacher)
 
         if selected_group:
             final_grades_query += " AND s.group_id = %s"
             final_params.append(selected_group)
 
-        if selected_semester:
-            final_grades_query += " AND cp.point_number = %s"
-            final_params.append(selected_semester)
-
         if selected_discipline:
             final_grades_query += " AND d.discipline_id = %s"
             final_params.append(selected_discipline)
-
-        final_grades_query += """
-            GROUP BY s.student_id, s.full_name, cp.point_number
-        ),
-        practice_scores AS (
-            SELECT 
-                s.student_id,
-                s.full_name AS student_name,
-                cp.point_number AS checkpoint_id,
-                AVG(CASE WHEN at.activity_name = 'Практика' THEN ss.score ELSE 0 END) * 0.6 AS practice_score
-            FROM student_scores ss
-            JOIN students s ON ss.student_id = s.student_id
-            JOIN teachers t ON ss.teacher_id = t.teacher_id
-            JOIN point_activities pa ON ss.activity_id = pa.activity_id
-            JOIN activity_types at ON pa.activity_type = at.activity_id
-            JOIN control_points cp ON pa.point_id = cp.point_id
-            JOIN disciplines d ON cp.discipline_id = d.discipline_id
-            WHERE at.activity_name = 'Практика'
-        """
-
-        if selected_teacher:
-            final_grades_query += " AND t.teacher_id = %s"
-            final_params.append(selected_teacher)
-
-        if selected_group:
-            final_grades_query += " AND s.group_id = %s"
-            final_params.append(selected_group)
-
-        if selected_semester:
-            final_grades_query += " AND cp.point_number = %s"
-            final_params.append(selected_semester)
-
-        if selected_discipline:
-            final_grades_query += " AND d.discipline_id = %s"
-            final_params.append(selected_discipline)
-
-        final_grades_query += """
-            GROUP BY s.student_id, s.full_name, cp.point_number
-        ),
-        checkpoint_scores AS (
-            SELECT 
-                COALESCE(l.student_id, p.student_id) AS student_id,
-                COALESCE(l.student_name, p.student_name) AS student_name,
-                COALESCE(l.checkpoint_id, p.checkpoint_id) AS checkpoint_id,
-                (COALESCE(l.lecture_score, 0) + COALESCE(p.practice_score, 0)) AS checkpoint_score
-            FROM lecture_scores l
-            FULL OUTER JOIN practice_scores p ON l.student_id = p.student_id AND l.checkpoint_id = p.checkpoint_id
-        ),
-        final_scores AS (
-            SELECT 
-                student_id,
-                student_name,
-                ROUND(AVG(checkpoint_score))::integer AS final_grade
-            FROM checkpoint_scores
-            GROUP BY student_id, student_name
-        )
-        SELECT * FROM final_scores
-        """
 
         # Запрос для сводной таблицы оценок
         summary_query = f"""
-            WITH final_grades AS ({final_grades_query}),
-            grade_categories AS (
-                SELECT 
-                    CASE 
-                        WHEN final_grade >= 85 THEN 'Отл'
-                        WHEN final_grade >= 75 THEN 'Хор'
-                        WHEN final_grade >= 60 THEN 'Удовл'
-                        ELSE 'Неудовл'
-                    END as grade
-                FROM final_grades
-            )
+                    WITH final_data AS (
+            {final_grades_query}
+        ),
+        grades_grouped AS (
             SELECT 
-                grade,
-                COUNT(*) as student_count
-            FROM grade_categories
-            GROUP BY grade
-            ORDER BY CASE grade 
-                WHEN 'Отл' THEN 1 
-                WHEN 'Хор' THEN 2 
-                WHEN 'Удовл' THEN 3 
+                CASE
+                    WHEN final_grade >= 85 THEN 'Отл'
+                    WHEN final_grade >= 75 THEN 'Хор'
+                    WHEN final_grade >= 60 THEN 'Удовл'
+                    ELSE 'Неудовл'
+                END as grade_category
+            FROM final_data
+        )
+        SELECT 
+            grade_category,
+            COUNT(*) as student_count
+        FROM grades_grouped
+        GROUP BY grade_category
+        ORDER BY 
+            CASE 
+                WHEN grade_category = 'Отл' THEN 1 
+                WHEN grade_category = 'Хор' THEN 2 
+                WHEN grade_category = 'Удовл' THEN 3 
                 ELSE 4 
             END
         """
@@ -228,7 +169,13 @@ def index():
             details_query = f"""
                 SELECT 
                     student_name,
-                    final_grade
+                    final_grade,
+                    CASE
+                        WHEN final_grade >= 85 THEN 'Отл'
+                        WHEN final_grade >= 75 THEN 'Хор'
+                        WHEN final_grade >= 60 THEN 'Удовл'
+                        ELSE 'Неудовл'
+                    END as grade_category
                 FROM ({final_grades_query}) AS final_data
                 ORDER BY 
                     CAST(SUBSTRING(student_name FROM 'Студент (\d+)') AS INTEGER)
