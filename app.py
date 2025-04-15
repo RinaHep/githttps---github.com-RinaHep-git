@@ -1,10 +1,49 @@
-from flask import Flask, render_template, request, send_file
+from flask import Flask, render_template, request, send_file, redirect, url_for, session, flash
+from functools import wraps
 import psycopg2
 import json, datetime
 from docx import Document
 from io import BytesIO
 
 app = Flask(__name__)
+app.secret_key = 'your-secret-key-123'  # Замените на надежный секретный ключ в продакшене
+
+# Конфигурация пользователя (email: password)
+USER_CREDENTIALS = {
+    'user@example.com': '123456'
+}
+
+def login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not session.get('logged_in'):
+            flash('Пожалуйста, войдите в систему для доступа к этой странице', 'danger')
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated_function
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        email = request.form.get('email')
+        password = request.form.get('password')
+        
+        if email in USER_CREDENTIALS and USER_CREDENTIALS[email] == password:
+            session['logged_in'] = True
+            session['email'] = email
+            flash('Вы успешно вошли в систему', 'success')
+            return redirect(url_for('index'))
+        else:
+            flash('Неверный email или пароль', 'danger')
+    
+    return render_template('login.html')
+
+@app.route('/logout')
+def logout():
+    session.pop('logged_in', None)
+    session.pop('email', None)
+    flash('Вы успешно вышли из системы', 'success')
+    return redirect(url_for('login'))
 
 def get_db_connection():
     return psycopg2.connect(
@@ -16,6 +55,7 @@ def get_db_connection():
     )
 
 @app.route('/', methods=['GET', 'POST'])
+@login_required
 def index():
     conn = get_db_connection()
     cur = conn.cursor()
@@ -110,7 +150,7 @@ def index():
                     WHERE ss.teacher_id = %s
                 )
             """
-        final_params.append(selected_teacher)
+            final_params.append(selected_teacher)
 
         if selected_group:
             final_grades_query += " AND s.group_id = %s"
@@ -191,6 +231,7 @@ def index():
     )
 
 @app.route('/export', methods=['POST'])
+@login_required
 def export():
     from collections import defaultdict
 
