@@ -1,6 +1,6 @@
 from flask import Flask, render_template, request, send_file
 import psycopg2
-import json
+import json, datetime
 from docx import Document
 from io import BytesIO
 
@@ -192,39 +192,141 @@ def index():
 
 @app.route('/export', methods=['POST'])
 def export():
+    from collections import defaultdict
+
     teacher_name = request.form.get('teacher_name')
     group_name = request.form.get('group_name')
     semester_name = request.form.get('semester_name')
     discipline_name = request.form.get('discipline_name')
-    
-    # Получение summary и проверка на корректность JSON
-    summary_data = request.form.get('summary')
-    try:
-        summary = json.loads(summary_data)
-    except json.JSONDecodeError:
-        summary = []  # Поставим пустой список, если JSON некорректен
 
     doc = Document()
     doc.add_heading('Отчёт по успеваемости студентов', 0)
 
-    if teacher_name or group_name or semester_name or discipline_name:
+    if any([teacher_name, group_name, semester_name, discipline_name]):
         doc.add_heading('Фильтры:', level=1)
-        if teacher_name: doc.add_paragraph(f'Преподаватель: {teacher_name}')
-        if group_name: doc.add_paragraph(f'Группа: {group_name}')
-        if semester_name: doc.add_paragraph(f'Семестр: {semester_name}')
-        if discipline_name: doc.add_paragraph(f'Дисциплина: {discipline_name}')
+        if teacher_name:
+            doc.add_paragraph(f'Преподаватель: {teacher_name}')
+        if group_name:
+            doc.add_paragraph(f'Группа: {group_name}')
+        if semester_name:
+            doc.add_paragraph(f'Семестр: {semester_name}')
+        if discipline_name:
+            doc.add_paragraph(f'Дисциплина: {discipline_name}')
 
-    doc.add_heading('Сводка по оценкам', level=1)
-    table = doc.add_table(rows=1, cols=2)
-    table.style = 'Table Grid'
-    hdr_cells = table.rows[0].cells
-    hdr_cells[0].text = 'Оценка'
-    hdr_cells[1].text = 'Количество студентов'
-    
-    for grade, count in summary:
-        row_cells = table.add_row().cells
-        row_cells[0].text = grade
-        row_cells[1].text = str(count)
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+
+        teacher_id = group_id = discipline_id = semester_num = None
+
+        if teacher_name:
+            cur.execute("SELECT teacher_id FROM teachers WHERE full_name = %s", (teacher_name,))
+            result = cur.fetchone()
+            if result:
+                teacher_id = result[0]
+
+        if group_name:
+            cur.execute("SELECT group_id FROM groups WHERE group_name = %s", (group_name,))
+            result = cur.fetchone()
+            if result:
+                group_id = result[0]
+
+        if discipline_name:
+            cur.execute("SELECT discipline_id FROM disciplines WHERE discipline_name = %s", (discipline_name,))
+            result = cur.fetchone()
+            if result:
+                discipline_id = result[0]
+
+        if semester_name:
+            semester_num = int(semester_name.split()[0])
+
+        query = """
+            SELECT 
+                s.full_name AS student_name,
+                ROUND(fg.total_score)::integer AS final_score,
+                CASE
+                    WHEN ROUND(fg.total_score)::integer >= 85 THEN 'Отл'
+                    WHEN ROUND(fg.total_score)::integer >= 75 THEN 'Хор'
+                    WHEN ROUND(fg.total_score)::integer >= 60 THEN 'Удовл'
+                    ELSE 'Неудовл'
+                END AS grade_label
+            FROM final_grades fg
+            JOIN students s ON fg.student_id = s.student_id
+            JOIN teachers t ON fg.teacher_id = t.teacher_id
+            JOIN disciplines d ON fg.discipline_id = d.discipline_id
+            JOIN control_points cp ON d.discipline_id = cp.discipline_id
+            WHERE 1=1
+        """
+        params = []
+
+        if teacher_id:
+            query += " AND t.teacher_id = %s"
+            params.append(teacher_id)
+        if group_id:
+            query += " AND s.group_id = %s"
+            params.append(group_id)
+        if discipline_id:
+            query += " AND d.discipline_id = %s"
+            params.append(discipline_id)
+        if semester_num:
+            query += " AND cp.point_number = %s"
+            params.append(semester_num)
+
+        query += " GROUP BY s.full_name, fg.total_score"
+
+        cur.execute(query, tuple(params))
+        grades_data = cur.fetchall()
+
+        # Сводка: считаем количество по каждой категории
+        grade_order = ['Отл', 'Хор', 'Удовл', 'Неудовл']
+        grade_counter = defaultdict(int)
+        students_with_neudovl = []
+
+        for student_name, score, grade in grades_data:
+            grade_counter[grade] += 1
+            if grade == 'Неудовл':
+                students_with_neudovl.append((student_name, grade))
+
+        # Добавляем сводку по оценкам
+        doc.add_heading('Сводка по оценкам', level=1)
+        grades_table = doc.add_table(rows=1, cols=2)
+        grades_table.style = 'Table Grid'
+        hdr_cells = grades_table.rows[0].cells
+        hdr_cells[0].text = 'Оценка'
+        hdr_cells[1].text = 'Количество студентов'
+
+        for grade in grade_order:
+            count = grade_counter.get(grade, 0)
+            if count > 0:
+                row_cells = grades_table.add_row().cells
+                row_cells[0].text = grade
+                row_cells[1].text = str(count)
+
+        # Таблица с Неудовл
+        doc.add_heading('Студенты с неудовлетворительными оценками', level=1)
+        if students_with_neudovl:
+            failures_table = doc.add_table(rows=1, cols=2)
+            failures_table.style = 'Table Grid'
+            hdr_cells = failures_table.rows[0].cells
+            hdr_cells[0].text = 'ФИО Студента'
+            hdr_cells[1].text = 'Итоговая оценка'
+
+            for student_name, final_grade in students_with_neudovl:
+                row_cells = failures_table.add_row().cells
+                row_cells[0].text = student_name
+                row_cells[1].text = final_grade
+        else:
+            doc.add_paragraph('Нет студентов с неудовлетворительными оценками.')
+
+    except Exception as e:
+        print(f"Ошибка при экспорте: {e}")
+        doc.add_paragraph('Ошибка при формировании отчета.')
+
+    finally:
+        if 'cur' in locals():
+            cur.close()
+        if 'conn' in locals():
+            conn.close()
 
     buffer = BytesIO()
     doc.save(buffer)
@@ -233,7 +335,7 @@ def export():
     return send_file(
         buffer,
         as_attachment=True,
-        download_name='Отчёт_по_оценкам.docx',
+        download_name=f'Отчёт_по_оценкам_{datetime.datetime.now().strftime("%Y-%m-%d")}.docx',
         mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
     )
 
