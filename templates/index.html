@@ -332,6 +332,15 @@
         {% endfor %}
     </table>
 
+    <form action="/export" method="post">
+        <input type="hidden" name="teacher_name" value="{{ teacher_name }}">
+        <input type="hidden" name="group_name" value="{{ group_name }}">
+        <input type="hidden" name="semester_name" value="{{ semester_name }}">
+        <input type="hidden" name="discipline_name" value="{{ discipline_name }}">
+        <input type="hidden" name="summary" value="{{ summary | tojson }}">
+        <button type="submit">Скачать отчёт в Word</button>
+    </form>
+
     <form method="post">
         <input type="hidden" name="teacher_id" value="{{ selected_teacher }}">
         <input type="hidden" name="group_id" value="{{ selected_group }}">
