@@ -6,12 +6,15 @@ from docx import Document
 from io import BytesIO
 
 app = Flask(__name__)
-app.secret_key = 'your-secret-key-123'  # Замените на надежный секретный ключ в продакшене
+app.secret_key = 'your-secret-key-123'  # Секретный ключ
 
 # Конфигурация пользователя (email: password)
 USER_CREDENTIALS = {
     'user@example.com': '123456'
 }
+
+# Для хранения зарегистрированных пользователей
+REGISTERED_USERS = {}
 
 def login_required(f):
     @wraps(f)
@@ -22,13 +25,36 @@ def login_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    if request.method == 'POST':
+        email = request.form.get('email')
+        password = request.form.get('password')
+        
+        if not email or not password:
+            flash('Email и пароль обязательны для заполнения', 'danger')
+            return redirect(url_for('register'))
+        
+        if email in USER_CREDENTIALS or email in REGISTERED_USERS:
+            flash('Пользователь с таким email уже существует', 'danger')
+            return redirect(url_for('register'))
+        
+        # Регистрируем нового пользователя
+        REGISTERED_USERS[email] = password
+        flash('Регистрация прошла успешно! Теперь вы можете войти.', 'success')
+        return redirect(url_for('login'))
+    
+    return render_template('register.html')
+
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
         email = request.form.get('email')
         password = request.form.get('password')
         
-        if email in USER_CREDENTIALS and USER_CREDENTIALS[email] == password:
+        # Проверяем как в основных учетных данных, так и в зарегистрированных
+        if (email in USER_CREDENTIALS and USER_CREDENTIALS[email] == password) or \
+           (email in REGISTERED_USERS and REGISTERED_USERS[email] == password):
             session['logged_in'] = True
             session['email'] = email
             flash('Вы успешно вошли в систему', 'success')
@@ -57,6 +83,7 @@ def get_db_connection():
 @app.route('/', methods=['GET', 'POST'])
 @login_required
 def index():
+    # Получение данных из БД для фильтров
     conn = get_db_connection()
     cur = conn.cursor()
 
@@ -77,6 +104,7 @@ def index():
     show_details = False
     teacher_name = group_name = semester_name = discipline_name = ''
 
+    # Обработка фильтров и формирование отчетов
     if request.method == 'POST':
         selected_teacher = request.form.get('teacher_id', '')
         selected_group = request.form.get('group_id', '')

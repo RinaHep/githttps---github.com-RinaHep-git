@@ -68,6 +68,10 @@
             background-color: #f2dede;
             color: #a94442;
         }
+        .register-link {
+            text-align: center;
+            margin-top: 20px;
+        }
     </style>
 </head>
 <body>
@@ -93,6 +97,10 @@
             </div>
             <button type="submit">Войти</button>
         </form>
+        
+        <div class="register-link">
+            Нет аккаунта? <a href="{{ url_for('register') }}">Зарегистрироваться</a>
+        </div>
     </div>
 </body>
 </html>
