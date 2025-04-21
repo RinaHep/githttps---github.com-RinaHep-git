@@ -1,9 +1,11 @@
-from flask import Flask, render_template, request, send_file, redirect, url_for, session, flash
+from flask import Flask, render_template, request, send_file, redirect, url_for, session, flash, jsonify
 from functools import wraps
 import psycopg2
 import json, datetime
 from docx import Document
 from io import BytesIO
+from matplotlib import pyplot as plt
+import base64
 
 app = Flask(__name__)
 app.secret_key = 'your-secret-key-123'  # Секретный ключ
@@ -407,6 +409,93 @@ def export():
         download_name=f'Отчёт_по_оценкам_{datetime.datetime.now().strftime("%Y-%m-%d")}.docx',
         mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
     )
+
+@app.route('/plot', methods=['POST'])
+@login_required
+def plot():
+    # Получаем данные из формы
+    teacher_id = request.form.get('teacher_id')
+    group_id = request.form.get('group_id')
+    
+    # Получаем данные из БД
+    conn = get_db_connection()
+    cur = conn.cursor()
+    
+    query = """
+        WITH grades_grouped AS (
+            SELECT 
+                CASE
+                    WHEN ROUND(fg.total_score)::integer >= 85 THEN 'Отл'
+                    WHEN ROUND(fg.total_score)::integer >= 75 THEN 'Хор'
+                    WHEN ROUND(fg.total_score)::integer >= 60 THEN 'Удовл'
+                    ELSE 'Неудовл'
+                END as grade_category
+            FROM final_grades fg
+            JOIN students s ON fg.student_id = s.student_id
+            WHERE 1=1
+    """
+    params = []
+    
+    if teacher_id:
+        query += " AND fg.teacher_id = %s"
+        params.append(teacher_id)
+    if group_id:
+        query += " AND s.group_id = %s"
+        params.append(group_id)
+    
+    query += """
+        )
+        SELECT 
+            grade_category,
+            COUNT(*) as student_count
+        FROM grades_grouped
+        GROUP BY grade_category
+        ORDER BY 
+            CASE 
+                WHEN grade_category = 'Отл' THEN 1 
+                WHEN grade_category = 'Хор' THEN 2 
+                WHEN grade_category = 'Удовл' THEN 3 
+                ELSE 4 
+            END
+    """
+    
+    cur.execute(query, tuple(params))
+    summary = cur.fetchall()
+    cur.close()
+    conn.close()
+    
+    # Используем агрессивный бэкенд для matplotlib
+    import matplotlib
+    matplotlib.use('Agg')  # Это должно быть ДО импорта pyplot
+    import matplotlib.pyplot as plt
+    
+    # Создаем диаграмму
+    grades = [row[0] for row in summary]
+    counts = [row[1] for row in summary]
+    
+    fig, ax = plt.subplots(figsize=(8, 6))
+    bars = ax.bar(grades, counts, color=['#D32F2F', '#FBC02D', '#689F38', '#2E7D32'])
+    
+    # Добавляем подписи над столбцами
+    for bar in bars:
+        height = bar.get_height()
+        ax.text(bar.get_x() + bar.get_width()/2., height,
+                f'{int(height)}',
+                ha='center', va='bottom')
+    
+    ax.set_title('Распределение оценок')
+    ax.set_ylabel('Количество студентов')
+    
+    # Сохраняем в буфер
+    buffer = BytesIO()
+    plt.savefig(buffer, format='png', bbox_inches='tight')
+    buffer.seek(0)
+    plt.close(fig)  # Явно закрываем фигуру
+    
+    # Кодируем в base64 для отображения в HTML
+    image_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
+    
+    return jsonify({'image': image_base64})
 
 if __name__ == '__main__':
     app.run(debug=True)

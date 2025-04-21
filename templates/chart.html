@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Диаграмма успеваемости</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        .chart-container {
+            width: 80%;
+            margin: 0 auto;
+        }
+        .back-button {
+            display: block;
+            margin: 20px auto;
+            padding: 10px 20px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            text-align: center;
+            text-decoration: none;
+            width: 200px;
+        }
+    </style>
+</head>
+<body>
+    <div class="chart-container">
+        <canvas id="gradesChart"></canvas>
+    </div>
+    
+    <a href="{{ url_for('index') }}" class="back-button">Назад к отчетам</a>
+
+    <script>
+        // Получаем данные из шаблона
+        const chartData = JSON.parse('{{ summary | tojson | safe }}');
+        
+        // Подготовка данных для диаграммы
+        const labels = ['Неудовл', 'Удовл', 'Хор', 'Отл'];
+        const data = [0, 0, 0, 0];
+        const colors = ['#ff6384', '#ffcd56', '#36a2eb', '#4bc0c0'];
+        
+        chartData.forEach(item => {
+            const index = labels.indexOf(item[0]);
+            if (index !== -1) {
+                data[index] = item[1];
+            }
+        });
+        
+        // Создание диаграммы
+        const ctx = document.getElementById('gradesChart').getContext('2d');
+        new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Количество студентов',
+                    data: data,
+                    backgroundColor: colors,
+                    borderColor: colors,
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    title: {
+                        display: true,
+                        text: 'Распределение оценок студентов',
+                        font: {
+                            size: 18
+                        }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                return `${context.parsed.y} студентов`;
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        title: {
+                            display: true,
+                            text: 'Количество студентов'
+                        }
+                    },
+                    x: {
+                        title: {
+                            display: true,
+                            text: 'Оценки'
+                        }
+                    }
+                }
+            }
+        });
+    </script>
+</body>
+</html>
